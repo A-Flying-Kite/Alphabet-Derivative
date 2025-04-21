@@ -63,6 +63,7 @@ class DrawingApp:
         self.canvas.bind("<ButtonRelease-1>", self.end_draw)
 
         self.colorbar = None
+        
 
     def toggle_smooth_stroke(self):
         self.show_smooth_stroke = not self.show_smooth_stroke
