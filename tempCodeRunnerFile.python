@@ -1,0 +1,36 @@
+
+import tkinter as tk
+import time
+
+class DrawingApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Stroke Capture App")
+
+        self.canvas = tk.Canvas(root, bg="white", width=600, height=400)
+        self.canvas.pack()
+
+        self.canvas.bind("<ButtonPress-1>", self.start_draw)
+        self.canvas.bind("<B1-Motion>", self.draw)
+        self.canvas.bind("<ButtonRelease-1>", self.end_draw)
+
+        self.stroke = []
+
+    def start_draw(self, event):
+        self.stroke = [(event.x, event.y, time.time())]
+        self.last_x, self.last_y = event.x, event.y
+
+    def draw(self, event):
+        self.canvas.create_line(self.last_x, self.last_y, event.x, event.y, fill="black", width=2)
+        self.stroke.append((event.x, event.y, time.time()))
+        self.last_x, self.last_y = event.x, event.y
+
+    def end_draw(self, event):
+        self.stroke.append((event.x, event.y, time.time()))
+        print("Captured stroke with", len(self.stroke), "points.")
+        # For now, just print it. You could return it or process it here.
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = DrawingApp(root)
+    root.mainloop()
