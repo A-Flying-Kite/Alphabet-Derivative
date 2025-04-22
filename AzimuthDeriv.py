@@ -15,7 +15,7 @@ class DrawingApp:
         self.root = root
         self.root.title("Stroke Derivative Viewer")
 
-        self.show_smooth_stroke = False  # Toggle for showing original stroke overlaid
+        self.show_smooth_stroke = False
 
         self.main_frame = tk.Frame(root)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
@@ -63,14 +63,10 @@ class DrawingApp:
         self.canvas.bind("<ButtonRelease-1>", self.end_draw)
 
         self.colorbar = None
-        
 
     def toggle_smooth_stroke(self):
         self.show_smooth_stroke = not self.show_smooth_stroke
-        if self.show_smooth_stroke:
-            self.toggle_smooth_stroke_button.config(relief=tk.SUNKEN)
-        else:
-            self.toggle_smooth_stroke_button.config(relief=tk.RAISED)
+        self.toggle_smooth_stroke_button.config(relief=tk.SUNKEN if self.show_smooth_stroke else tk.RAISED)
         print("Showing smoothed stroke:" if self.show_smooth_stroke else "Showing raw stroke")
 
     def start_draw(self, event):
@@ -96,21 +92,6 @@ class DrawingApp:
                 simplified_stroke.append((curr_x, curr_y, curr_time))
         return simplified_stroke
 
-    def smooth_stroke(self, stroke, window_size=5):
-        x = np.array([p[0] for p in stroke])
-        y = np.array([p[1] for p in stroke])
-        x_smooth = np.convolve(x, np.ones(window_size)/window_size, mode='valid')
-        y_smooth = np.convolve(y, np.ones(window_size)/window_size, mode='valid')
-        t_smooth = np.linspace(0, max([p[2] for p in stroke]), len(x_smooth))
-        return x_smooth, y_smooth, t_smooth
-
-    def compute_speed(self, x, y, t):
-        dx = np.diff(x)
-        dy = np.diff(y)
-        dt = np.diff(t)
-        speed = np.sqrt(dx**2 + dy**2) / np.maximum(dt, 1e-5)
-        return speed
-
     def process_stroke(self):
         if len(self.stroke) < 5:
             print("Too few points to process.")
@@ -123,41 +104,47 @@ class DrawingApp:
             tck, u = splprep([x, y], s=20, k=3)
             unew = np.linspace(0, 1, 1000)
             out = splev(unew, tck)
-            deriv = splev(unew, tck, der=1)
-            speed = self.compute_speed(out[0], out[1], unew)
+            dx, dy = splev(unew, tck, der=1)
+
+            angles = np.arctan2(dy, dx)
+            angles_unwrapped = np.unwrap(angles)
+
+            ds = np.sqrt(dx**2 + dy**2)
+            arc_length = np.cumsum(ds)
+            arc_length -= arc_length[0]
+
+            dtheta_ds = np.gradient(angles_unwrapped, arc_length)
 
             self.axs[0].cla()
             self.axs[1].cla()
 
-            norm = mcolors.Normalize(vmin=np.min(speed), vmax=np.max(speed))
-            cmap = plt.colormaps['RdYlGn']
+            norm = mcolors.Normalize(vmin=np.min(dtheta_ds), vmax=np.max(dtheta_ds))
+            cmap = plt.colormaps['coolwarm']
             points = np.array([out[0], out[1]]).T.reshape(-1, 1, 2)
             segments = np.concatenate([points[:-1], points[1:]], axis=1)
             lc = LineCollection(segments, cmap=cmap, norm=norm)
-            lc.set_array(speed)
+            lc.set_array(dtheta_ds)
             lc.set_linewidth(2)
             self.axs[0].add_collection(lc)
-            self.axs[0].set_title("Stroke (Speed Heatmap)")
+            self.axs[0].set_title("Stroke (Curvature Heatmap)")
             self.axs[0].invert_yaxis()
             self.axs[0].axis("equal")
+
             if self.colorbar:
                 self.colorbar.ax.remove()
-                self.colorbar = None
-            self.colorbar = self.fig.colorbar(lc, ax=self.axs[0], label="Speed (px/s)")
+            self.colorbar = self.fig.colorbar(lc, ax=self.axs[0], label="dθ/ds (curvature)")
 
             if self.show_smooth_stroke:
                 orig_x = np.array([p[0] for p in self.stroke])
                 orig_y = np.array([p[1] for p in self.stroke])
                 self.axs[0].plot(orig_x, orig_y, color='blue', alpha=0.25, linewidth=1, label='Original Stroke')
 
-            self.derivative_data = deriv
-            self.axs[1].plot(deriv[0], deriv[1], label='dx/dt vs dy/dt', color='red')
-            self.axs[1].set_title("Derivative")
-            self.axs[1].invert_yaxis()
-            self.axs[1].axis("equal")
+            self.axs[1].plot(arc_length, dtheta_ds, label='dθ/ds', color='purple')
+            self.axs[1].set_title("Curvature (dθ/ds)")
             self.axs[1].legend()
-
             self.plot_canvas.draw()
+
+            self.derivative_data = (arc_length, dtheta_ds)
 
         except Exception as e:
             print("Error processing stroke:", e)
@@ -167,12 +154,11 @@ class DrawingApp:
             print("No derivative data to smooth.")
             return
 
-        smoothed_derivative = gaussian_filter1d(self.derivative_data[1], sigma=3)
+        x, y = self.derivative_data
+        smoothed_y = gaussian_filter1d(y, sigma=3)
         self.axs[1].clear()
-        self.axs[1].plot(self.derivative_data[0], smoothed_derivative, label='Smoothed dx/dt vs dy/dt', color='green')
-        self.axs[1].set_title("Smoothed Derivative")
-        self.axs[1].invert_yaxis()
-        self.axs[1].axis("equal")
+        self.axs[1].plot(x, smoothed_y, label='Smoothed dθ/ds', color='green')
+        self.axs[1].set_title("Smoothed Curvature")
         self.axs[1].legend()
         self.plot_canvas.draw()
 
